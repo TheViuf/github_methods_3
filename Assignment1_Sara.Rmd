@@ -1,0 +1,199 @@
+---
+title: "practical_exercise_1, Methods 3, 2021, autumn semester"
+author: 'Sara Viuf '
+date: "20-09-2021"
+output: html_document
+---
+
+## Preparation 
+```{r, eval=FALSE}
+pacman::p_load(tidyverse, lme4)
+data(mtcars)
+mtcars <- as.data.frame(mtcars)
+```
+## Exercise 1
+The general linear model: $Y = X \beta + \epsilon$:  
+Do a linear regression, expressing fuel usage as a function of weight using the function __lm__  
+```{r, eval=FALSE}
+m1 <- glm(mpg~wt, data = mtcars)
+summary(m1)
+```
+1. extract $\hat{\beta}$, $Y$, $\hat{Y}$, $X$ and $\epsilon$ from __model__ 
+```{r}
+eps <- residuals(m1)
+b_hat <- coef(m1)
+Y <- mtcars$mpg
+Y_hat <- predict(m1)
+X <- model.matrix(m1)
+X <- cbind(X,wt2=mtcars$wt^2)
+```
+    
+     i. create a plot that illustrates $Y$ and $\hat{Y}$
+```{r, eval=FALSE}
+#This is the ggplot showing the difference between observed and estimated y values. 
+p1 <- ggplot(mtcars, aes(X[, "wt"])) +
+  geom_line(aes(y = Y_hat)) + 
+  geom_point(aes(y = mpg)) + theme_bw() +ggtitle("Observed and predicted y values") + xlab("Weight") + ylab("fuel usage")
+p1
+```
+2. estimate $\beta$ for a quadratic model y = beta2 x^2 + beta1 * x + beta0  using ordinary least squares _without_ using __lm__; $\hat{\beta} = {({X}^{T} X)}^{-1} {X}^{T} Y$
+```{r}
+#estimating beta using ordinary least square 
+transposed_x <- t(X)
+b_est <- (solve(transposed_x %*% X) %*% transposed_x %*% mtcars$mpg)
+```
+
+3. compare your acquired $\hat{\beta}$ with the output of the corresponding quadratic model created using __lm__ (hint: use the function __I__, see details under help and the sub-section formula operators here:
+https://www.datacamp.com/community/tutorials/r-formula-tutorial)  
+```{r}
+q_mod <- glm(mpg ~ wt + I(wt^2), data = mtcars)
+summary(q_mod)
+anova(m1,q_mod)
+
+#fixing data
+Y_hat2 <-
+  b_est[3] * X[, "wt2"] +
+  b_est[2] * X[, "wt"] +
+  b_est[1]
+
+eps_q <- Y - Y_hat2
+```
+  
+  i. create a plot that illustrates $Y$ and $\hat{Y}$
+```{r}
+p2 <- ggplot(mtcars, aes(x = X[, "wt"])) +
+  geom_point(aes(y = Y))+
+  geom_line(aes(y = Y_hat))+
+  geom_smooth(aes(y = Y_hat2), method = lm, formula = y ~ x + I(x^2)) +
+  ggtitle("Comparing Y and estimated Y")+xlab("weight")+ylab("fuel usage") +
+  theme_bw()
+p2
+```
+
+## Exercise 2
+Compare the plotted quadratic fit to the linear fit 
+1. which seems better?  
+
+2. calculate the sum of squared errors, (show the calculation based on $\epsilon$). Which fit has the lower sum?  
+```{r}
+# two solutions
+deviance(m1)
+deviance(q_mod)
+
+rss_m1 <- sum((Y - Y_hat)^2)
+rss_q_mod <- sum((Y - Y_hat2)^2)
+#The quadratic fit has the lowest squared sum of error
+
+```
+
+3. now make a cubic fit ($y = {\beta}_{3} x^3 + {\beta}_{2} x^2 + {\beta}_{1} x + {\beta}_{0}$) and compare it to the quadratic fit  
+### Is this poly stuff?
+```{r}
+X <- cbind(X, wt3 = mtcars$wt^3)
+transposed_X <- t(X)
+b_hat_cubic <- (solve(transposed_X %*% X) %*% transposed_X %*% Y)
+b_hat_cubic
+Y_hat3 <-  b_hat_cubic[4]*X[, "wt3"] + b_hat_cubic[3]*X[, "wt2"] + b_hat_cubic[2] *X[, "wt"] + b_hat_cubic[1]
+
+cub_mod <- glm(mpg ~ wt + I(wt^3), data = mtcars)
+summary(cub_mod)
+
+eps_cub <- Y - Y_hat3
+eps_cub
+```
+
+    i. create a plot that illustrates $Y$ and $\hat{Y}$ for both the cubic and the quadratic fits (plot them in the same plot) 
+
+```{r}
+p3 <- ggplot(mtcars, aes(x = X[, "wt"]))+
+  geom_point(aes(y = Y))+
+  geom_smooth(aes(y = Y_hat2), method = glm, formula = y ~ x + I(x^2), color = "blue", lwd=0.8) +
+  geom_smooth(aes(y = Y_hat3), method = glm, formula = y ~ x + I(x^2) + I(x^3), color = "red",lwd=0.8) + theme_bw() + xlab("weight") + ylab("fuel usage") + ggtitle("comparing the cubic(blue) to the quadratic(red) model")
+p3  
+```
+
+    ii. compare the sum of squared errors  
+```{r}
+deviance(q_mod)
+deviance(cub_mod)
+#Basically no difference.
+```
+
+    iii. what's the estimated value of the "cubic" (${\beta}_3$) parameter? Comment on this!  
+4. bonus question: which summary statistic is the fitted value (_Intercept_ or ${\beta}_0$ in $y = {\beta}_0$) below identical to?
+```{r}
+b_hat_cubic[4] #I'm uncertain about how to interpret this value. 
+```
+## Exercise 3
+Doing a logistic regression - estimating the probability that a car has automatic transmission (0) or manual transmission (1) based on its weight
+
+```{r, eval=FALSE}
+#I guess the assumptin here is that a heavier car is likelier to have manual transmission. 
+log_mod <- glm(am~wt, data=mtcars, family=binomial) 
+summary(log_mod)
+# When weight increases by one, log odds of transmission type goes down by -4.024. The z-score indicates that the mean of wt is -2.8 standard deviations from the mean of the standard normal distribution (0)
+```
+
+```{r}
+#I know how to use these, but I'm uncertain about what they mean
+logit <- function(x) log(x / (1 - x))
+inv.logit <- function(x) exp(x) / (1 + exp(x))
+```
+1. plot the fitted values for __logistic.model__:  
+```{r}
+fitted.values <- fitted.values(log_mod)
+p4 <- ggplot(mtcars, aes(x=fitted.values))+
+  geom_point(aes(y=mtcars$wt)) + geom_smooth(method = "glm", aes(y=mtcars$wt)) + ylab("weight") + ggtitle("comparing linear and logistic model")+theme_bw()
+```
+
+    i. what is the relation between the __linear.predictors__ and the __fitted_values__ of the __logistic.model__ object?
+```{r}
+#I guess the direction of the slope is the same in the linear and the logistic model. The linear model doesnøt reflect the clustering of data point the way the logistic model does. 
+```
+
+2. plot the logistic function, you've estimated based on your $\hat{\beta}$, (not just the fitted values). Use an _xlim_ of (0, 7)
+```{r}
+b_log <- coef(log_mod)
+log_funk <- function(x) inv.logit(x * b_log[2] + b_log[1])
+p5 <- plot(log_funk, xlim=c(0,7))
+```
+   
+    i. what's the interpretation of the estimated $\hat{\beta}_0$ (the _Intercept_)
+```{r}
+#Again, I get the syntax, but I'm uncertain about how to interpret this value.
+```
+    
+    ii. calculate the estimated probability that the Pontiac Firebird has automatic transmission, given its weight
+```{r}
+weight <- mtcars["Pontiac Firebird", ]$wt
+probs_fire <- 1 - logistic.func(weight)
+probs_fire
+#I guess this means that there's a 3.1% chance of the Firebird car having a manual transmission engine based on its weight. 
+```
+
+3. plot quadratic fit alongside linear fit  
+```{r}
+log_mod_q <- glm(am ~ wt + I(wt^2), mtcars, family = "binomial")
+
+p7 <- ggplot(mtcars, aes(wt, am)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = FALSE, method.args = list(family = "binomial"), color = "red",lwd=0.5) +
+  geom_smooth(method = "glm", se = FALSE, method.args = list(family = "binomial"), color = "blue",lwd=0.5, formula = y ~ x + I(x^2)) + ggtitle("Comparing linear to quadratic fit") + xlab("Weight")
+```
+    
+    i. judging visually, does adding a quadratic term make a difference?
+```{r}
+#No dramatic difference
+```
+    
+    ii. check the details in the help of the AIC function - which of the models provide the better fit according to the AIC values and the residual deviance respectively?
+```{r}
+deviance(log_mod_q)
+deviance(log_mod)
+AIC(log_mod,log_mod_q)
+BIC(log_mod,log_mod_q)
+#the linear fit seem to be the best fit according to both AIC and BIC. Adding quadratic fit didn't really help, though it was a bit more presice
+```
+
+    iii. in your own words, why might it be good to penalise a model like the quadratic model, we just fitted.
+  If the point is predicting future event from prior events an over fitted model is not helpful. It is not necessarily the goal to have a perfect fit. It might matter whether we are doing descriptive or prescriptive analysis. The quadratic model has a lower deviance, meaning more of the data is explained by the fit, but not by much. Adding the layer of complexity in this case didn't add value. 
