@@ -1,0 +1,89 @@
+---
+title: "Untitled"
+author: "Sara Viuf"
+date: "9/24/2021"
+output: html_document
+---
+      A LOG TRANSFORMATION TAKES THE X VALUE AND REPLCE IT WITH LOG(X)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse,lme4, fmsb)
+data(mtcars)
+mtcars <- as.data.frame(mtcars)
+mtcars$vs <- NULL
+mtcars$am <- NULL
+mtcars$gear <- NULL
+mtcars$drat <- NULL
+mtcars$cyl <- NULL
+names(mtcars)
+
+#multicolinearity?
+plot(mtcars[2:6]) #visual
+
+#>0.9 would indicate multicolinearity
+cor(mtcars$hp, mtcars$wt)
+cor(mtcars$hp, mtcars$disp)
+cor(mtcars$wt, mtcars$disp)
+
+library(fmsb)
+
+VIF(lm(hp~wt, data = mtcars)) # VIF > 10 means there evidence of mulitcolinearity.
+```
+
+```{r}
+m <- lm(mpg~.,data=mtcars)
+summary(m)
+
+m1 <- lm(mpg ~ disp + hp + wt + qsec , data = mtcars)
+summary(m1)
+m2 <- lm(mpg ~ hp + wt + qsec , data = mtcars)
+summary(m2)
+m3 <- lm(mpg ~ hp + wt , data = mtcars)
+summary(m3)
+
+confint(m3, level = .95)
+
+#Normaloty assumption
+qqnorm(m3$residuals)+qqline(m3$residuals)
+
+#Homoscedasticity assumption 
+plot(m3$residuals ~ m3$fitted.values,
+     xlab = "Fitted Values",
+     ylab = "Residual Values") + abline(0,0) #Assumption is violated, variance is not constant. There is no clear trend/pattern in the data, so the assumptions of normal diustribution of residuals is not violated. 
+
+
+### HERE I WILL TRY TO GRADUALLY TRANSFORM DATA, TO STRAIGHTEN OUT THIS LINE THAT INDICATES THAT THE RESIDUALS ARE NOT NORMALLY DISTRIBUTED. 
+plot(m3) #the first plot's line is the one that should be somewhat straight. 
+
+#first transformation
+t1 <- lm(mpg ~ sqrt(hp) + sqrt(wt) , data = mtcars)
+plot(t1,1) #Didn't make a difference
+
+#Second transformation
+t2 <- lm(sqrt(mpg) ~ sqrt(hp) + sqrt(wt) , data = mtcars)
+par(mfrow = c(2,2))
+plot(t2,1) # helped a bit, could prolly be better. 
+
+#Third transformation
+t3 <- lm(sqrt(mpg) ~ log(hp) + log(wt) , data = mtcars)
+par(mfrow = c(2,2))
+plot(t3,1) #almost straigt!
+
+summary(t3) #this is the m3 model where the variables are transformed.
+
+#How many miles per galon can a car with horsepower=170 and weight=4500 pounds drive?
+coef(t3) 
+mpg <- 8.6415 - .5744*log(170) - 1.2505*log(4.5)
+mpg^2
+#That car would drive 14.52104 miles per gallon according to out model. 
+
+#I'll try running it again from a df with only the relevant variables. 
+
+new_df <- data.frame(hp=170,wt=4.5)
+pred <-predict(t3, new_df, interval="predict")
+pred^2 #This means that the models prediction of miles per gallon in a 95% confidence interval of that specific car is between in lwr and upr
+
+
+```
+
