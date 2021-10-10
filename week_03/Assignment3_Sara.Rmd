@@ -181,38 +181,41 @@ print(VarCorr(m6), comp='Variance')
 ```{r}
 #New data frame
 data_count <- df %>% select(subject, pas, task, correct) %>%
-    group_by(subject, task, pas) %>%
-    summarize(
+    dplyr::group_by(subject, task, pas) %>%
+    dplyr::summarize(
         subject = subject[1],
         task = task[1],
         pas = pas[1],
-        count = n(),
-        accuracy = sum(correct) / n(),
-        groups = "drop")
-#Predicting count based on pas and task's main effect and interactions. Random intercept for subject and random slopes for pas. I'm trying to use poisson as fthe family since it has to do with probabilities, unsure though. 
-m7 <- glmer(count ~
-    pas + task + pas:task +
-    (1 + pas | subject),
-    data = data.count,
-    family = poisson,
-    control = glmerControl(optimizer = "bobyqa"))
+        count = n(), #all the correct responses?
+        accuracy = sum(correct) / count) #how many times did a certain subject, in a certain task, with a certain pas score correctly identify the target, divided by 'count' which returns a percentage. 
+view(data_count)
+
+#Predicting count based on pas and task's main effect and interactions. Random intercept for subject and random slopes for pas. I'm using poisson as the family since it has to do with probabilities.
+m7 <- glmer(count~pas*task +(1 + pas | subject),data = data_count,family = poisson, control = glmerControl(optimizer = "bobyqa"))
 summary(m7)
+#Looks like everything is significant... Looks like both pas and task are decent predictors to some extend.
 
 #Filtering out my subjects from ealier
 data_count_sub <- data_count %>% 
       filter(subject == "001"|subject == "002"|subject == "003"|subject == "004")
 
-#Fitted values for the model
-data_count_sub$fit_m7 <- fitted.values(m7)
+#Fitted values for the model, but only returning values for my four subjects. 
+data_count_sub$fit_m7 <- predict(m7, newdata = data_count_sub)
 
 #Plot the predictions of m7
-p2 <- ggplot(data_count_sub, aes(count, fit_m7)) + geom_point()+ geom_smooth() + facet_wrap(~subject) + ggtitle("Partial pooling")
+data_count_sub %>% ggplot(aes(task, count, color = task)) +
+    geom_point() +
+    geom_point(aes(x = task, y = fit_m7), shape = 18, size = 3) +
+    facet_wrap(subject~pas)
+
+
+ggplot(data_count_sub, aes(task, count, col = task)) + geom_point()+geom_point(aes(task,fit_m7))+ facet_wrap(subject~pas) + ggtitle("Partial pooling")+ theme(plot.margin = unit(c(.0001,.1,.0001,.1), "cm")) 
 
 #Only task as main effect. 
 m8 <- glmer(correct~task+(1|subject), df, family = binomial(link="logit"))
 summary(m8)
 r.squaredGLMM(m8)
-#Task explains almost no variance, so I don't caretoo much that the task quadruplet and singles return significant p-values. 
+#Task explains almost no variance, so I don't care too much that the task quadruplet and singles return significant p-values. 
 ```
     
     ii. add _pas_ as a main effect on top of _task_ - what are the consequences of that?  
@@ -220,7 +223,7 @@ r.squaredGLMM(m8)
 m9 <- glmer(correct~task+pas+(1|subject), df, family = binomial(link="logit"))
 summary(m9)
 r.squaredGLMM(m9)
-#This model is a little better. Pas is a good predictor. 
+#This model is a little better. Pas is a dencent predictor. 
 ```
     
     iii. now fit a multilevel model that models _correct_ as dependent on _pas_ with a unique intercept for each _subject_
@@ -240,8 +243,11 @@ r.squaredGLMM(m11)
 
 
 anova(m8,m9,m10,m11)
-piecewiseSEM::rsquared(m10)
-#I pick m10 as the best model.(correct~pas+(1|subject)) It is simple and adding more predictors didn't really make a difference. 
+r.squaredGLMM(m8)
+r.squaredGLMM(m9)
+r.squaredGLMM(m10) 
+r.squaredGLMM(m11)
+#I pick m10 as the best model.(correct~pas+(1|subject)) It is simple and adding more predictors, both in the form of main effects and interactions, didn't really make a difference. I did an anova test and m10 was best, returning the lowest AIC and BIC, significance, and also explained the most variance, R^2 = 22%. 
 ```
     
 
