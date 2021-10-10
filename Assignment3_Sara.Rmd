@@ -1,0 +1,255 @@
+---
+title: "practical_exercise_3, Methods 3, 2021, autumn semester"
+author: '[Sara Viuf ]'
+date: "[5-10-2021]"
+output: html_document
+---
+
+<style type="text/css">
+  body{
+  font-size: 14pt;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, lme4, readr,plyr,MuMIn,piecewiseSEM,dfoptim)
+```
+## Exercise 1
+```{r}
+#Loading data and fixing data frame.
+mydir = "experiment_2"
+d = list.files(path=mydir, pattern="*.csv", full.names=TRUE)
+df = ldply(d, read_csv)
+
+#Fixing classes
+df$trial.type <- as.factor(df$trial.type)
+df$pas <- as.factor(df$pas)
+df$trial <- as.factor(df$trial)
+df$task <- as.factor(df$task)
+df$subject <- as.factor(df$subject)
+df$target.type <- as.factor(df$target.type)
+df$obj.resp <- as.factor(df$obj.resp)
+str(df)
+
+#Adding column, 1 means the participant response was correct, 0 means it was incorrect. 
+df$correct = 0
+df$correct = as.logical(ifelse(df$obj.resp == "e" & df$target.type =="even", 1,
+                              ifelse(df$obj.resp == "o" & df$target.type =="odd", 1,
+                                     ifelse(df$obj.resp == "e" & df$target.type =="odd", 0, 
+                                            ifelse(df$obj.resp == "o" & df$target.type =="even", 0, NA)))))
+
+```
+These are the variables in the data set:
+_trial.type_ -> describes if the trial is staircase or experiment.
+_pas_ -> describes score from 1 to 4 on the Perceptual Awareness Scale. 
+_trial_ -> for both trial types this indicates trial number. 
+_target.contrast_ -> numeric grey scale, range 0-1. Higher number means more intense coloring of the target digit. 
+_cue_ -> indicates what number was used when cueing
+_task_ -> how many numbers could be shown; has the levels quadruplet: (all numbers); pairs: (2 even and 2 odd numbers); singles: (1 even and 1 odd number)
+_target_type_ -> indicates whether the target shown was a number from the column 'odd.digit' or 'even.digit'
+_rt.subj_ -> reaction time, seconds, of the pas responses. 
+_rt.obj_ -> reaction time, seconds, how long did it take the participant to respond to the target digit. 
+_obj.resp_ -> describes what key the the participant pressed, 'o' for odd or 'e' for even
+_subject_ -> subject number. 
+_correct_ -> If the response was correct. 
+
+```{r}
+#Subsetting dataframe to only include the 'staircase' trial type. 
+staircase_df <- df %>% 
+  filter(trial.type == "staircase")
+
+#no-pool model, predicting correct based on target.contrast. No random effects. Since correct is logical, the model should be logistic.
+m <- glm(correct~target.contrast, data=staircase_df, family = binomial(link="logit"))
+summary(m)
+r.squaredGLMM(m)
+
+#Getting the fitted values. 
+staircase_df$fit = fitted.values(m)
+
+#Plotting fitted values for the no pooling model. 
+p <- ggplot(staircase_df, aes(target.contrast, fit)) + geom_point()+ geom_smooth()+facet_wrap(~subject) + ggtitle("No pooling")
+
+#Partial pooling logistic model, predicting response based on the grey shading of the digit. Modeling target.contrast as random slope, and subject as random intercept. 
+m1 <- glmer(correct~target.contrast + (1+target.contrast|subject), staircase_df, family = binomial(link = "logit"))
+staircase_df$fit1 <- fitted.values(m1)
+summary(m1)
+r.squaredGLMM(m1)
+
+#Plotting fitted values for the partial pooling model. 
+p1 <- ggplot(staircase_df, aes(target.contrast, fit1)) + geom_point()+ geom_smooth() + facet_wrap(~subject) + ggtitle("Partial pooling")
+
+cowplot::plot_grid(p,p1)
+#The partial pooling allows for the individual response (correct/incorrect) to vary according to how each subject deals with specific grey shades on the screen. If you want to infer something about the population go with the no pooling, if  you wanna infer something about individuals go with the partial pooling model.
+```
+
+## Exercise 2
+```{r}
+#Filtering data to only include four subject and the experiment trial type. 
+sub$subject <- as.factor(sub$subject)
+sub <- filter(df, subject == "001" |subject == "002" |subject == "003" |subject == "004") %>% 
+  filter(trial.type == "experiment")
+
+#Predicting rt.obj based on suject as random intercept.
+m2 <- lmer(rt.obj ~ (1|subject), sub)
+r.squaredGLMM(m2)
+
+#Making sure the following four plots are shown together
+par(mfrow = c(2, 2))
+
+#Adding column containing m2 residuals
+sub$m2_res <- residuals(m2)
+
+#QQplots for the four subjects individually
+qqnorm(sub[sub$subject == "001", ]$m2_res)
+qqline(sub[sub$subject == "001", ]$m2_res,
+    col = "red")
+qqnorm(sub[sub$subject == "002", ]$m2_res)
+qqline(sub[sub$subject == "002", ]$m2_res,
+    col = "red")
+qqnorm(sub[sub$subject == "003", ]$m2_res)
+qqline(sub[sub$subject == "003", ]$m2_res,
+    col = "red")
+qqnorm(sub[sub$subject == "004", ]$m2_res)
+qqline(sub[sub$subject == "004", ]$m2_res,
+    col = "red")
+
+
+#In one end of the plot there are large residuals, but in the other end they are minimal. There is a clear exponential trend in the residuals. This violates the assumption that the residuals should be normally distributed. I'll fix it with a log transformation.
+
+#log transforming rt.obj to fix residuals. 
+m3 <- lmer(log(rt.obj) ~ (1|subject), sub)
+r.squaredGLMM(m3)
+
+#Adding column contains m3 residuals 
+sub$m3_res <- residuals(m3)
+
+#Making sure the following four plots are shown together
+par(mfrow = c(2, 2))
+
+#QQplots for each of the four subjects.
+qqnorm(sub[sub$subject == "001", ]$m3_res)
+qqline(sub[sub$subject == "001", ]$m3_res,
+    col = "red")
+qqnorm(sub[sub$subject == "002", ]$m3_res)
+qqline(sub[sub$subject == "002", ]$m3_res,
+    col = "red")
+qqnorm(sub[sub$subject == "003", ]$m3_res)
+qqline(sub[sub$subject == "003", ]$m3_res,
+    col = "red")
+qqnorm(sub[sub$subject == "004", ]$m3_res)
+qqline(sub[sub$subject == "004", ]$m3_res,
+    col = "red")
+
+#The log transformation made the residuals at each end more equally deviant and less so. It helped. 
+```
+  
+```{r}
+#I included subject as random intercept and grey shade as slope. rt.obj is still logtransformed
+m4 <- lmer(log(rt.obj)~task + (1+target.contrast|subject),sub, REML=FALSE)
+summary(m4)
+#Minimal difference between tasks. 
+r.squaredGLMM(m4)
+#Task only explains 0.08% of the variance. The whole model only explains 0.009 of the variance. Super bad model.
+
+#The non existent variance between tasks is illustrated in this boxplot.
+ggplot(sub, aes(task,log(rt.obj))) + geom_boxplot()
+#The visual trend doesn't change when all participants are included.
+ggplot(df, aes(task,log(rt.obj))) + geom_boxplot()
+
+#My idea here was to see if the grey contrast on the screen had an impact on how fast the participant responded to the object, so I included target.contrast as random slope so it varies for each subject. Color contrast only explained 4.09% of the variance. There is still 63% left unexplained. R^2 = 8%. The model explains basically no variance, so it doesn't seem to have anything to to with the specific task. 
+MuMIn::r.squaredGLMM(m4)
+
+#Adding interaction between pass and task. I am ditching color.contrast as random slope. 
+m5 <- lmer(log(rt.obj)~task + task:pas + (1|subject),sub, REML = F)
+summary(m5)
+r.squaredGLMM(m5)
+
+#I got away with having three random intercepts. The variables 'pas' and 'task' were problematic. They each returned isSingular even when modelled as the only random intercept. 
+m6 <- lmer(log(rt.obj)~task +task:pas+(1|subject)+(1|trial)+(1|cue)+(1|task), sub, REML=F)
+summary(m6)
+print(VarCorr(m6), comp='Variance')
+#Task has a variance of 0. That's a problem!
+#If a random effect explains no variance then R returns 'isSingular'. It is means you need to remove random effect or add data. This model seems a bit overkill, it's too detailed and complex. 
+```
+    
+    
+## Exercise 3
+
+1) Initialise a new data frame, `data.count`. _count_ should indicate the number of times they categorized their experience as _pas_ 1-4 for each _task_. I.e. the data frame would have for subject 1: for task:singles, pas1 was used # times, pas2 was used # times, pas3 was used # times and pas4 was used # times. You would then do the same for task:pairs and task:quadruplet  
+
+```{r}
+#New data frame
+data_count <- df %>% select(subject, pas, task, correct) %>%
+    dplyr::group_by(subject, task, pas) %>%
+    dplyr::summarize(
+        subject = subject[1],
+        task = task[1],
+        pas = pas[1],
+        count = n(), #all the correct responses?
+        accuracy = sum(correct) / count) #how many times did a certain subject, in a certain task, with a certain pas score correctly identify the target, divided by 'count' which returns a percentage. 
+view(data_count)
+
+#Predicting count based on pas and task's main effect and interactions. Random intercept for subject and random slopes for pas. I'm using poisson as the family since it has to do with probabilities.
+m7 <- glmer(count~pas*task +(1 + pas | subject),data = data_count,family = poisson, control = glmerControl(optimizer = "bobyqa"))
+summary(m7)
+#Looks like everything is significant... Looks like both pas and task are decent predictors to some extend.
+
+#Filtering out my subjects from ealier
+data_count_sub <- data_count %>% 
+      filter(subject == "001"|subject == "002"|subject == "003"|subject == "004")
+
+#Fitted values for the model, but only returning values for my four subjects. 
+data_count_sub$fit_m7 <- predict(m7, newdata = data_count_sub)
+
+#Plot the predictions of m7
+data_count_sub %>% ggplot(aes(task, count, color = task)) +
+    geom_point() +
+    geom_point(aes(x = task, y = fit_m7), shape = 18, size = 3) +
+    facet_wrap(subject~pas)
+
+
+ggplot(data_count_sub, aes(task, count, col = task)) + geom_point()+geom_point(aes(task,fit_m7))+ facet_wrap(subject~pas) + ggtitle("Partial pooling")+ theme(plot.margin = unit(c(.0001,.1,.0001,.1), "cm")) 
+
+#Only task as main effect. 
+m8 <- glmer(correct~task+(1|subject), df, family = binomial(link="logit"))
+summary(m8)
+r.squaredGLMM(m8)
+#Task explains almost no variance, so I don't care too much that the task quadruplet and singles return significant p-values. 
+```
+    
+    ii. add _pas_ as a main effect on top of _task_ - what are the consequences of that?  
+```{r}
+m9 <- glmer(correct~task+pas+(1|subject), df, family = binomial(link="logit"))
+summary(m9)
+r.squaredGLMM(m9)
+#This model is a little better. Pas is a dencent predictor. 
+```
+    
+    iii. now fit a multilevel model that models _correct_ as dependent on _pas_ with a unique intercept for each _subject_
+```{r}
+#I'll ditch task, and only use pas as predictor. Task only explained .2% variance, pas explained 20%.
+m10 <- glmer(correct~pas+(1|subject), df, family = binomial(link="logit"))
+summary(m10)
+r.squaredGLMM(m10)
+```
+    
+    iv. finally, fit a model that models the interaction between _task_ and _pas_  and their main effects  
+```{r}
+#Modelling interaction and main effect of pas and task. 
+m11 <- glmer(correct~pas*task+(1|subject), df, family = binomial(link="logit"))
+summary(m11)
+r.squaredGLMM(m11)
+
+
+anova(m8,m9,m10,m11)
+r.squaredGLMM(m8)
+r.squaredGLMM(m9)
+r.squaredGLMM(m10) 
+r.squaredGLMM(m11)
+#I pick m10 as the best model.(correct~pas+(1|subject)) It is simple and adding more predictors, both in the form of main effects and interactions, didn't really make a difference. I did an anova test and m10 was best, returning the lowest AIC and BIC, significance, and also explained the most variance, R^2 = 22%. 
+```
+    
+
+  
+
